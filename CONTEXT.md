@@ -180,8 +180,12 @@ más comisiones: un simulador sin costos siempre parece rentable.
 
 ## 6. Variables de entorno
 
-**Nombres solamente. Nunca commitear valores.** `.env` y `.env.demo` con
-valores reales están en `.gitignore`; usar `.env.example` como plantilla.
+**Nombres solamente. Nunca commitear valores.**
+
+Se versionan **solo las plantillas**: `.env.example` y `.env.demo.example`. Los
+archivos con credenciales reales (`.env`, `.env.demo`, `.env.local`) están en
+`.gitignore`. Para usarlos: `cp .env.example .env` o
+`cp .env.demo.example .env.demo`.
 
 **Credenciales:**
 - `TYPESAFE_API_KEY` — sin ella el bot corre igual, con el cerebro heurístico
@@ -232,6 +236,7 @@ npm test                          # 147 tests
 **Demo de un día** (paper, saldo virtual, sin cuenta de exchange):
 
 ```bash
+cp .env.demo.example .env.demo
 npm run demo:doctor    # verifica conexiones y viabilidad del capital
 npm run demo           # bucle continuo
 npm run demo:status    # desde otra terminal

@@ -1,7 +1,9 @@
 node_modules/
 dist/
+# Archivos con credenciales reales. Solo se versionan las plantillas .example.
 .env
 .env.local
+.env.demo
 *.log
 
 # Estado del bot: posiciones, ordenes, curva de equity. Nunca al repo.

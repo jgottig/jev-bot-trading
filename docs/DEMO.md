@@ -34,7 +34,11 @@ npm run backtest -- --days=180
 git clone https://github.com/jgottig/jev-bot-trading.git
 cd jev-bot-trading
 npm install
+cp .env.demo.example .env.demo
 ```
+
+> `.env.demo` está en `.gitignore`: tu clave nunca llega al repo. **No pongas
+> credenciales en `.env.demo.example`**, que sí se versiona.
 
 ### Opción A — sin ninguna cuenta
 
@@ -47,7 +51,7 @@ npm run demo
 ### Opción B — con Jev (lo que querés probar de verdad)
 
 1. Sacá tu clave en [typesafe.ai](https://typesafe.ai)
-2. Pegala en `.env.demo`:
+2. Pegala en tu `.env.demo` (el que copiaste, no el `.example`):
 
 ```bash
 TYPESAFE_API_KEY=tu_clave_aca

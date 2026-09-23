@@ -175,10 +175,12 @@ ese historico. Compara el resultado con comprar y sostener.
 ### 2. Demo de un día — precios reales, plata ficticia
 
 ```bash
+cp .env.demo.example .env.demo
 npm run demo
 ```
 
 Perfil listo para dejarlo corriendo todo el día sin cuentas de exchange.
+`.env.demo` está en `.gitignore`, así que tu clave nunca llega al repo.
 Guía completa en [`docs/DEMO.md`](docs/DEMO.md).
 
 ### 3. Paper trading con el perfil real — precios reales, plata ficticia
