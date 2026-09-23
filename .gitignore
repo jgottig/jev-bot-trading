@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+
+# Estado del bot: posiciones, ordenes, curva de equity. Nunca al repo.
+# El directorio lo crea StateStore al guardar por primera vez.
+data/
