@@ -45,6 +45,7 @@ function state(over: { open?: boolean; spreadBps?: number } = {}): DecisionState
       volume: { z_score: 0.8 },
       levels: { distance_to_recent_high_pct: -1.5, distance_to_recent_low_pct: 4.2 },
       recent_candles: [],
+      costs: { round_trip_cost_pct: 0.84, atr_to_cost_ratio: 1.43 },
     },
     portfolio: {
       has_open_position: over.open ?? false,
@@ -54,6 +55,8 @@ function state(over: { open?: boolean; spreadBps?: number } = {}): DecisionState
       hours_in_position: over.open ? 3 : null,
       distance_to_stop_pct: over.open ? -2 : null,
       distance_to_target_pct: over.open ? 3 : null,
+      breakeven_price: over.open ? 49898 : null,
+      net_pnl_if_closed_now_pct: over.open ? 0.2 : null,
       cash_usd: 1000,
       equity_usd: 1000,
       exposure_pct: 0,

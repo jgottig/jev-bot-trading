@@ -24,10 +24,16 @@ estar muy por debajo del stop. **El stop limita la perdida esperada, no la
 garantiza.**
 
 ### Comisiones y spread
-Cada vuelta completa cuesta ~0.52% en fees mas el spread. El precio tiene que
-moverse mas de medio punto a tu favor solo para empatar. Un bot que opera de mas
-pierde por ahi aunque acierte la direccion — por eso el tope diario por defecto
-es 6 operaciones.
+Cada vuelta completa cuesta **0,80% en comisiones** (0,40% taker por lado, tramo
+base de Kraken) mas el spread y el slippage: alrededor de **0,92% en total**. El
+precio tiene que moverse casi un punto entero a tu favor solo para empatar.
+
+Es el riesgo mas subestimado de todos. Un bot que opera de mas pierde por ahi
+aunque acierte la direccion todas las veces. Por eso el tope diario por defecto
+son 6 operaciones, las velas por defecto son de 1 hora, y existe la compuerta
+`cost_edge` que no deja entrar si el objetivo no cubre 1,5 veces el costo.
+
+Detalle completo en [COSTS.md](COSTS.md).
 
 ## Limites del backtest
 

@@ -44,14 +44,22 @@ function verdict(over: Partial<JevVerdict> = {}): JevVerdict {
 }
 
 /** Cliente de mercado servido por un fetch falso, con el precio que pidamos. */
-function marketAt(price: number, opts: { spread?: number; trend?: number } = {}): KrakenPublicClient {
+function marketAt(
+  price: number,
+  opts: { spread?: number; trend?: number; range?: number } = {},
+): KrakenPublicClient {
   const spread = opts.spread ?? 10;
   const trend = opts.trend ?? 0;
+  const range = opts.range ?? 400;
   const fetchMock = vi.fn(async (url: string) => {
     if (url.includes("/OHLC")) {
       const rows = Array.from({ length: 120 }, (_, i) => {
         const p = price - trend * (120 - i);
-        return [String(1_700_000_000 + i * 900), String(p), String(p + 50), String(p - 50), String(p), String(p), "10", 5];
+        return [
+          String(1_700_000_000 + i * 3600), String(p),
+          String(p + range), String(p - range),
+          String(p), String(p), "10", 5,
+        ];
       });
       return new Response(JSON.stringify({ error: [], result: { XXBTZUSD: rows, last: 0 } }));
     }
@@ -106,7 +114,7 @@ describe("TradingEngine", () => {
     config: Config,
     brain: Brain,
     price = 50000,
-    marketOpts: { spread?: number; trend?: number } = {},
+    marketOpts: { spread?: number; trend?: number; range?: number } = {},
   ) {
     const broker = new PaperBroker({
       startingCash: config.PAPER_STARTING_CASH,
@@ -329,6 +337,87 @@ describe("TradingEngine", () => {
     await expect(engine.runOnce()).rejects.toThrow();
     // El estado en disco sigue siendo valido para el proximo ciclo.
     expect(engine.currentState.position).toBeNull();
+  });
+
+  it("no entra cuando el movimiento esperado no cubre las comisiones", async () => {
+    // Mercado tranquilo: el objetivo por ATR queda por debajo del costo de la
+    // vuelta completa. Aunque el modelo este convencido, entrar es perder plata.
+    const c = cfg({ FEE_RATE: "0.004", MIN_EDGE_MULTIPLE: "1.5" });
+    const { engine } = engineWith(c, new ScriptedBrain([verdict()]), 50000, { range: 20 });
+    const result = await engine.runOnce();
+
+    expect(result.action).toBe("idle");
+    expect(result.plan?.gates.find((g) => g.name === "cost_edge")?.passed).toBe(false);
+    expect(engine.currentState.position).toBeNull();
+  });
+
+  it("la misma operacion se habilita si bajan las comisiones", async () => {
+    // Prueba de que lo que bloquea es el costo y no otra compuerta.
+    const cheap = cfg({ FEE_RATE: "0.0001", MIN_EDGE_MULTIPLE: "1.5", PAPER_SLIPPAGE_BPS: "0" });
+    const { engine } = engineWith(cheap, new ScriptedBrain([verdict()]), 50000, { range: 60 });
+    const result = await engine.runOnce();
+    expect(result.plan?.gates.find((g) => g.name === "cost_edge")?.passed).toBe(true);
+  });
+
+  it("no aplica la compuerta de costo a una posicion ya abierta", async () => {
+    // Salir nunca se bloquea por costo: el costo ya se pago al entrar.
+    const c = cfg();
+    const { engine, broker } = engineWith(c, new ScriptedBrain([verdict()]));
+    await engine.runOnce();
+    expect(engine.currentState.position).not.toBeNull();
+
+    const exiting = new TradingEngine({
+      cfg: c,
+      brain: new ScriptedBrain([verdict({ exitNow: 0.95 })]),
+      broker,
+      market: marketAt(50000, { range: 20 }),
+      store: new StateStore(c.DATA_DIR),
+      logger: new Logger("error"),
+    });
+    const result = await exiting.runOnce();
+    expect(result.action).toBe("closed");
+    expect(result.plan?.gates.some((g) => g.name === "cost_edge")).toBe(false);
+  });
+
+  it("contabiliza el costo en tokens de cada consulta al modelo", async () => {
+    const c = cfg();
+    const brain = new ScriptedBrain([
+      verdict({ action: "hold", usage: { inputTokens: 1100, outputTokens: 5 } }),
+    ]);
+    const { engine } = engineWith(c, brain);
+    await engine.runOnce();
+
+    expect(engine.currentState.modelCalls).toBe(1);
+    // 1100 tokens a USD 0.042 por millon.
+    expect(engine.currentState.modelCostUsd).toBeCloseTo(1100 * 0.042 / 1e6, 12);
+  });
+
+  it("le muestra a Jev el costo de operar y el precio de equilibrio", async () => {
+    const c = cfg();
+    const brain = new ScriptedBrain([verdict()]);
+    const { engine, broker } = engineWith(c, brain);
+    await engine.runOnce();
+
+    // Sin posicion: el costo de la vuelta esta en el estado.
+    expect(brain.seen[0]!.market.costs.round_trip_cost_pct).toBeGreaterThan(0.7);
+    expect(brain.seen[0]!.portfolio.breakeven_price).toBeNull();
+
+    const brain2 = new ScriptedBrain([verdict({ action: "hold" })]);
+    const held = new TradingEngine({
+      cfg: c,
+      brain: brain2,
+      broker,
+      market: marketAt(50000),
+      store: new StateStore(c.DATA_DIR),
+      logger: new Logger("error"),
+    });
+    await held.runOnce();
+
+    // Con posicion: el equilibrio esta por encima de la entrada, por la comision
+    // que todavia falta pagar al vender.
+    const p = brain2.seen[0]!.portfolio;
+    expect(p.breakeven_price).toBeGreaterThan(p.entry_price!);
+    expect(p.net_pnl_if_closed_now_pct).toBeLessThan(p.unrealized_pnl_pct!);
   });
 
   it("resetKillSwitch vuelve a habilitar las entradas", async () => {

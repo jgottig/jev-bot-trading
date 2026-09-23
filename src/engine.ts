@@ -7,6 +7,7 @@ import { atr, last } from "./indicators/index.js";
 import { buildDecisionState, type SessionFeatures } from "./brain/features.js";
 import type { Brain, JevVerdict } from "./brain/jev.js";
 import { decidePlan, type Plan } from "./brain/policy.js";
+import { assessEdge, jevCallCostUsd } from "./risk/costs.js";
 import {
   checkBreakers,
   checkHardExits,
@@ -177,6 +178,7 @@ export class TradingEngine {
 
     // --- 3. Consulta a Jev -----------------------------------------------------
     const state = buildDecisionState({
+      cfg,
       pair: cfg.PAIR,
       intervalMin: cfg.CANDLE_INTERVAL_MIN,
       candles: recent,
@@ -188,6 +190,10 @@ export class TradingEngine {
     });
 
     const verdict = await brain.decide(state);
+    if (verdict.usage) {
+      this.state.modelCostUsd += jevCallCostUsd(verdict.usage.inputTokens);
+      this.state.modelCalls += 1;
+    }
     logger.info("veredicto", {
       action: verdict.action,
       p: verdict.actionProbabilities,
@@ -197,10 +203,17 @@ export class TradingEngine {
       exitNow: Number(verdict.exitNow.toFixed(3)),
       model: verdict.model,
       latencyMs: verdict.latencyMs,
+      inputTokens: verdict.usage?.inputTokens,
     });
 
     // --- 4. Politica ------------------------------------------------------------
-    const plan = decidePlan(state, verdict, cfg);
+    // Rentabilidad esperada frente al costo, calculada sobre los niveles que
+    // tendria la operacion si se abriera ahora mismo al precio actual.
+    const atrNow = last(atr(recent, 14));
+    const projected = initialLevels(quote.ask, atrNow, cfg);
+    const edge = assessEdge(quote.ask, projected.targetPrice, quote, cfg);
+
+    const plan = decidePlan(state, verdict, cfg, this.state.position ? undefined : edge);
 
     if (plan.kind === "close" && this.state.position) {
       const fill = await this.closePosition("model_exit", quote, rules.quantityDecimals);
@@ -234,8 +247,7 @@ export class TradingEngine {
       }
 
       const fill = await broker.placeMarketOrder("buy", sizing.quantity, quote);
-      const atrValue = last(atr(recent, 14));
-      const levels = initialLevels(fill.price, atrValue, cfg);
+      const levels = initialLevels(fill.price, atrNow, cfg);
       this.state.position = {
         quantity: fill.quantity,
         entryPrice: fill.price,

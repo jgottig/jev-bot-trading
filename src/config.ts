@@ -28,8 +28,14 @@ const schema = z.object({
   // --- Mercado ---------------------------------------------------------
   /** Par en notacion Kraken. XBTUSD = Bitcoin contra dolar. */
   PAIR: z.string().default("XBTUSD"),
-  /** Minutos por vela. Kraken admite 1, 5, 15, 30, 60, 240, 1440. */
-  CANDLE_INTERVAL_MIN: z.coerce.number().int().positive().default(15),
+  /**
+   * Minutos por vela. Kraken admite 1, 5, 15, 30, 60, 240, 1440.
+   *
+   * El default es 60 y no algo mas corto por el costo: con una vuelta costando
+   * ~0.80%, los movimientos de una vela de 15m rara vez lo cubren, asi que el
+   * bot operaria mucho para entregarle el resultado al exchange.
+   */
+  CANDLE_INTERVAL_MIN: z.coerce.number().int().positive().default(60),
   /** Cada cuantos segundos corre un ciclo de decision. */
   LOOP_INTERVAL_SEC: z.coerce.number().int().positive().default(300),
 
@@ -73,6 +79,16 @@ const schema = z.object({
   MAX_HOLDING_HOURS: z.coerce.number().positive().default(72),
   /** Spread maximo tolerado en bps. Por encima, no se opera. */
   MAX_SPREAD_BPS: z.coerce.number().positive().default(20),
+  /**
+   * Cuantas veces el objetivo de la operacion tiene que cubrir su costo de ida
+   * y vuelta para que valga la pena entrar.
+   *
+   * Con el arancel base de Kraken una vuelta cuesta ~0.80% mas spread. En 1 el
+   * bot entraria en operaciones que apenas empatan; el objetivo se alcanza solo
+   * a veces pero el costo se paga siempre, incluso en las que terminan en stop.
+   * Por eso el valor util esta bastante por encima de 1.
+   */
+  MIN_EDGE_MULTIPLE: z.coerce.number().min(0).default(1.5),
 
   // --- Umbrales de decision sobre la salida de Jev ----------------------
   /** Probabilidad minima de la accion elegida para abrir una posicion (0-1). */
@@ -95,8 +111,12 @@ const schema = z.object({
   // --- Operacion -------------------------------------------------------
   DATA_DIR: z.string().default("./data"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-  /** Comision estimada por operacion (0.0026 = 0.26%, el taker fee base de Kraken). */
-  FEE_RATE: z.coerce.number().min(0).max(0.1).default(0.0026),
+  /**
+   * Comision por operacion. 0.004 = 0.40%, el arancel taker del tramo base de
+   * Kraken (menos de USD 10.000 de volumen en 30 dias). El bot usa ordenes a
+   * mercado, que siempre son taker. Bajalo si tu volumen te movio de tramo.
+   */
+  FEE_RATE: z.coerce.number().min(0).max(0.1).default(0.004),
   /** Slippage asumido en el simulador, en bps. */
   PAPER_SLIPPAGE_BPS: z.coerce.number().min(0).default(5),
   /** Si es true, el bot puede abrir posiciones. Si es false, solo cierra. */

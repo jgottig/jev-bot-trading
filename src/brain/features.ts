@@ -9,6 +9,8 @@ import {
   rsi,
   volumeZScore,
 } from "../indicators/index.js";
+import { breakevenPrice, roundTripCost } from "../risk/costs.js";
+import type { Config } from "../config.js";
 import type { Candle, Position, Quote } from "../types.js";
 import { spreadBps } from "../types.js";
 import { pctChange, r } from "../util/num.js";
@@ -58,6 +60,17 @@ export interface MarketFeatures {
   };
   /** Las ultimas velas en crudo, por si el modelo lee algo que los indicadores no capturan. */
   recent_candles: { o: number; h: number; l: number; c: number; v: number }[];
+  /**
+   * Cuanto cuesta operar aca. Va en el estado a proposito: sin este dato el
+   * modelo no puede distinguir un movimiento que deja ganancia de uno que la
+   * entrega entera en comisiones.
+   */
+  costs: {
+    /** Lo que tiene que subir el precio para empatar una vuelta completa. */
+    round_trip_cost_pct: number;
+    /** Cuantas veces el movimiento tipico de una vela cubre ese costo. */
+    atr_to_cost_ratio: number | null;
+  };
 }
 
 export interface PortfolioFeatures {
@@ -68,6 +81,13 @@ export interface PortfolioFeatures {
   hours_in_position: number | null;
   distance_to_stop_pct: number | null;
   distance_to_target_pct: number | null;
+  /**
+   * Precio al que la posicion queda en cero contando la comision que falta
+   * pagar al vender. Por encima del precio de entrada, siempre.
+   */
+  breakeven_price: number | null;
+  /** Resultado si cerraramos ahora, ya descontadas ambas comisiones. */
+  net_pnl_if_closed_now_pct: number | null;
   cash_usd: number;
   equity_usd: number;
   exposure_pct: number;
@@ -88,6 +108,7 @@ export interface DecisionState {
 }
 
 export interface BuildFeaturesInput {
+  cfg: Config;
   pair: string;
   intervalMin: number;
   candles: Candle[];
@@ -109,7 +130,7 @@ function changeOver(closes: number[], lookback: number): number {
 }
 
 export function buildMarketFeatures(input: BuildFeaturesInput): MarketFeatures {
-  const { candles, quote, pair, intervalMin } = input;
+  const { candles, quote, pair, intervalMin, cfg } = input;
   const closes = candles.map((c) => c.close);
   const price = quote.last;
 
@@ -189,13 +210,23 @@ export function buildMarketFeatures(input: BuildFeaturesInput): MarketFeatures {
       c: r(c.close, 2),
       v: r(c.volume, 3),
     })),
+    costs: (() => {
+      const cost = roundTripCost(quote, cfg);
+      const atrPct = atrLast !== null && price > 0 ? (atrLast / price) * 100 : null;
+      const costPct = cost.roundTripBps / 100;
+      return {
+        round_trip_cost_pct: r(costPct, 4),
+        atr_to_cost_ratio: atrPct !== null && costPct > 0 ? r(atrPct / costPct, 3) : null,
+      };
+    })(),
   };
 }
 
 export function buildPortfolioFeatures(input: BuildFeaturesInput): PortfolioFeatures {
-  const { position, cash, baseQuantity, quote } = input;
+  const { position, cash, baseQuantity, quote, cfg } = input;
   const price = quote.last;
   const equity = cash + baseQuantity * price;
+  const breakeven = position ? breakevenPrice(position.entryPrice, cfg) : null;
 
   return {
     has_open_position: position !== null,
@@ -205,6 +236,9 @@ export function buildPortfolioFeatures(input: BuildFeaturesInput): PortfolioFeat
     hours_in_position: position ? r((Date.now() - position.entryTime) / 3_600_000, 2) : null,
     distance_to_stop_pct: position ? r(pctChange(price, position.stopPrice), 3) : null,
     distance_to_target_pct: position ? r(pctChange(price, position.targetPrice), 3) : null,
+    breakeven_price: breakeven === null ? null : r(breakeven, 2),
+    net_pnl_if_closed_now_pct:
+      breakeven === null ? null : r(pctChange(breakeven, quote.bid), 3),
     cash_usd: r(cash, 2),
     equity_usd: r(equity, 2),
     exposure_pct: equity > 0 ? r(((baseQuantity * price) / equity) * 100, 2) : 0,

@@ -8,7 +8,10 @@ describe("loadConfig", () => {
     const cfg = loadConfig(base);
     expect(cfg.MODE).toBe("paper");
     expect(cfg.PAIR).toBe("XBTUSD");
-    expect(cfg.CANDLE_INTERVAL_MIN).toBe(15);
+    expect(cfg.CANDLE_INTERVAL_MIN).toBe(60);
+    // El arancel taker del tramo base de Kraken, no el esquema viejo de 0.26%.
+    expect(cfg.FEE_RATE).toBe(0.004);
+    expect(cfg.MIN_EDGE_MULTIPLE).toBe(1.5);
     expect(cfg.ALLOW_ENTRIES).toBe(true);
   });
 

@@ -81,15 +81,18 @@ correctos. Recien ahi tiene sentido `MODE=live`.
 
 ## Comisiones
 
-El bot asume `FEE_RATE=0.0026` (0.26%), el taker fee base de Kraken para volumen
-bajo. Una vuelta completa (comprar + vender) cuesta ~0.52% mas el spread.
+El bot asume `FEE_RATE=0.004` (0,40%), el arancel **taker** del tramo base de
+Kraken: menos de USD 10.000 de volumen en 30 dias. El bot usa ordenes a mercado,
+que siempre son taker.
 
-Es mucho: el precio tiene que moverse mas de medio punto a tu favor solo para
-empatar. Por eso los frenos por defecto limitan a 6 operaciones diarias — un bot
-que opera de mas pierde por comisiones aunque acierte la direccion.
+Una vuelta completa (comprar + vender) cuesta **0,80% mas el spread**. Es mucho:
+el precio tiene que moverse casi un punto entero a tu favor solo para empatar.
 
-Si tu volumen sube, revisa tu fee real en **Settings → Fee schedule** y ajusta
-`FEE_RATE`.
+Si tu volumen sube, revisa tu arancel real en **Settings → Fee schedule** y
+ajusta `FEE_RATE`. A partir de USD 10.000 mensuales el taker baja a 0,35%.
+
+Ver [COSTS.md](COSTS.md) para el analisis completo y como el bot usa este numero
+para decidir si una operacion vale la pena.
 
 ## Sobre el par
 

@@ -172,6 +172,23 @@ async function status(cfg: Config): Promise<void> {
   console.log(`  Operaciones hoy: ${state.tradesToday}`);
   console.log(`  Perdidas seguidas: ${state.consecutiveLosses}`);
 
+  const fees = state.fills.reduce((a, f) => a + f.fee, 0);
+  console.log(`\n  COSTOS`);
+  console.log(`    Comisiones del exchange: ${fees.toFixed(2)} USD  (${state.fills.length} ordenes)`);
+  console.log(
+    `    Consultas a Jev:         ${state.modelCostUsd.toFixed(6)} USD  (${state.modelCalls} llamadas)`,
+  );
+  if (fees > 0 && state.modelCostUsd > 0) {
+    console.log(
+      `    Las comisiones son ${Math.round(fees / state.modelCostUsd)}x el costo del modelo.`,
+    );
+  }
+  const costoVuelta = cfg.FEE_RATE * 2 * 100;
+  console.log(
+    `    Cada vuelta completa cuesta ~${costoVuelta.toFixed(2)}% mas spread: ese es el ` +
+      `movimiento minimo\n    que el precio tiene que hacer a favor para empatar.`,
+  );
+
   if (state.position) {
     const p = state.position;
     const pnl = ((quote.last - p.entryPrice) / p.entryPrice) * 100;
@@ -195,7 +212,7 @@ async function status(cfg: Config): Promise<void> {
     const wins = closed.filter((t) => t.pnlUsd > 0).length;
     const total = closed.reduce((a, t) => a + t.pnlUsd, 0);
     console.log(`\n  Operaciones cerradas: ${closed.length}  |  ganadoras: ${wins}`);
-    console.log(`  Resultado acumulado: ${total.toFixed(2)} USD`);
+    console.log(`  Resultado acumulado: ${total.toFixed(2)} USD  (neto de comisiones)`);
     console.log(`\n  Ultimas 5:`);
     for (const t of closed.slice(-5)) {
       console.log(
@@ -242,7 +259,24 @@ async function backtest(cfg: Config, args: string[]): Promise<void> {
   console.log(`    Operaciones:       ${result.trades.length} (${result.wins} ganadoras, ${result.losses} perdedoras)`);
   console.log(`    Aciertos:          ${result.winRatePct}%`);
   console.log(`    Drawdown maximo:   ${result.maxDrawdownPct}%`);
-  console.log(`    Comisiones:        ${result.totalFees.toFixed(2)} USD`);
+  console.log(`\n    Comisiones:        ${result.totalFees.toFixed(2)} USD  ` +
+    `(${((result.totalFees / result.startEquity) * 100).toFixed(2)}% del capital inicial)`);
+  if (result.trades.length > 0) {
+    const brutoUsd = result.endEquity - result.startEquity + result.totalFees;
+    console.log(`    Resultado bruto:   ${brutoUsd.toFixed(2)} USD  (antes de comisiones)`);
+    console.log(`    Costo por vuelta:  ${(cfg.FEE_RATE * 2 * 100).toFixed(2)}% + spread`);
+    if (brutoUsd > 0 && result.endEquity < result.startEquity) {
+      console.log(
+        `\n    ATENCION: la estrategia acerto la direccion (bruto positivo) pero las\n` +
+          `    comisiones se comieron la ganancia entera.`,
+      );
+    }
+  }
+  if (useJev) {
+    // ~1.100 tokens de entrada por ciclo, a USD 0.042 por millon.
+    const costoModelo = (result.candlesEvaluated * 1100 * 0.042) / 1e6;
+    console.log(`    Costo del modelo:  ${costoModelo.toFixed(4)} USD  (${result.candlesEvaluated} consultas)`);
+  }
   console.log(
     `\n  ${
       result.returnPct > result.buyAndHoldPct

@@ -28,6 +28,10 @@ export interface BotState {
   equityCurve: { time: number; equity: number }[];
   /** Saldos del simulador, para retomar una corrida de paper tras un reinicio. */
   paper: { cash: number; base: number } | null;
+  /** Costo acumulado en dolares de las consultas a Jev. */
+  modelCostUsd: number;
+  /** Cantidad de consultas al modelo, para calcular el costo por decision. */
+  modelCalls: number;
 }
 
 export interface ClosedTrade {
@@ -61,6 +65,8 @@ export function emptyState(startingEquity: number, now = Date.now()): BotState {
     closedTrades: [],
     equityCurve: [],
     paper: null,
+    modelCostUsd: 0,
+    modelCalls: 0,
   };
 }
 
@@ -86,6 +92,9 @@ export class StateStore {
     if (parsed.version !== 1) {
       throw new Error(`Estado en version ${parsed.version}, esperaba 1. Archivo: ${this.file}`);
     }
+    // Campos agregados despues de la primera version del archivo.
+    parsed.modelCostUsd ??= 0;
+    parsed.modelCalls ??= 0;
     return parsed;
   }
 

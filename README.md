@@ -10,13 +10,17 @@ no puede sobrepasar. Arranca sin credenciales y sin plata.
 
 ## El stack, y por que
 
-| Pieza | Eleccion | Por que |
-|---|---|---|
-| **Decision** | Jev (`jev-latest`) vía `@typesafe-ai/sdk` | Devuelve decisiones tipadas con probabilidades en 70–500 ms, no texto para parsear. Cuesta centavos por millon de tokens. Es la pieza que pediste. |
-| **Ejecucion** | Kraken Spot (REST) | Opera legalmente en Argentina: registrado como PSAV ante la CNV desde mayo 2026, con deposito directo en pesos. Claves API con permisos granulares. |
-| **Datos de mercado** | Kraken API publica | Sin credenciales. Las velas que alimentan los indicadores salen de la misma fuente donde se ejecuta, asi que no hay desfasaje entre lo que el bot ve y donde opera. |
-| **Activo** | BTC/USD (`XBTUSD`) | El de mayor liquidez y menor spread. Con capital chico, el spread y las comisiones se comen el resultado antes que cualquier error de estrategia. |
-| **Runtime** | Node 20+ / TypeScript | El SDK de Jev es TypeScript de primera clase. |
+| Pieza | Eleccion | Costo | Por que |
+|---|---|---|---|
+| **Decision** | Jev (`jev-latest`) vía `@typesafe-ai/sdk` | USD 0,042 / 1M tokens de entrada · salida gratis → **~USD 0,40 al mes** | Devuelve decisiones tipadas con probabilidades en 70–500 ms, no texto para parsear. Es la pieza que pediste. |
+| **Ejecucion** | Kraken Spot (REST) | **0,40% por orden** (taker, tramo base) | Opera legalmente en Argentina: registrado como PSAV ante la CNV desde mayo 2026, con deposito directo en pesos. Claves API con permisos granulares. |
+| **Datos de mercado** | Kraken API publica | **Gratis**, sin clave | Las velas que alimentan los indicadores salen de la misma fuente donde se ejecuta, asi que no hay desfasaje entre lo que el bot ve y donde opera. |
+| **Activo** | BTC/USD (`XBTUSD`) | — | El de mayor liquidez y menor spread. Con capital chico, el spread y las comisiones se comen el resultado antes que cualquier error de estrategia. |
+| **Runtime** | Node 20+ / TypeScript | Gratis | El SDK de Jev es TypeScript de primera clase. |
+
+**El costo que importa es el del exchange, no el del modelo.** Una sola
+operacion en Kraken (~USD 2,30 sobre una posicion de 250) cuesta casi seis meses
+de consultas a Jev. Detalle completo en [`docs/COSTS.md`](docs/COSTS.md).
 
 ### Sobre Robinhood
 
@@ -68,6 +72,31 @@ Lo unico que recibe es un objeto JSON que arma
 Y **tampoco ejecuta ordenes**. Jev no tiene acceso al exchange. Solo responde
 preguntas. Quien manda las ordenes es el codigo del bot.
 
+### Cuanto tarda
+
+| Etapa | Demora |
+|---|---|
+| Bajar velas + cotizacion de Kraken | ~100–400 ms |
+| Calcular indicadores | <5 ms |
+| **Consulta a Jev** | **~70–500 ms** |
+| Politica + dimensionamiento | <1 ms |
+| Mandar la orden a Kraken | ~100–300 ms |
+| Confirmar la ejecucion | ~300 ms–2 s |
+| **Total: estado enviado → orden ejecutada** | **~0,5–3 segundos** |
+
+Pero la demora que de verdad importa **no es esa**: es `LOOP_INTERVAL_SEC`, que
+por defecto son **300 segundos**. El bot mira el mercado cada 5 minutos, asi que
+entre que el precio se mueve y el bot reacciona pueden pasar hasta 5 minutos.
+
+Es deliberado. Esto **no es un bot de alta frecuencia** y no puede competir con
+uno: opera sobre velas de 1 hora buscando movimientos de mas de 1,4%, donde
+llegar tres segundos antes o despues no cambia nada. Bajar el intervalo no lo
+hace mejor, lo hace mas caro — cada operacion de mas cuesta 0,80%.
+
+La unica excepcion son los stops, que **tambien** se evaluan cada 5 minutos. Si
+el precio se derrumba entre dos ciclos, se vende al precio que haya. El stop
+limita la perdida esperada, no la garantiza.
+
 ### Como decide, exactamente
 
 Jev no genera texto, asi que el bot no le pregunta "¿que hago?". Le hace cinco
@@ -90,7 +119,13 @@ action == "buy"              AND  p(buy)     >= MIN_BUY_PROBABILITY
 confianza >= MIN_CONFIDENCE  AND  conviccion >= MIN_CONVICTION
 downside_risk <= MAX_RISK_PROBABILITY
 regime != "trending_down"    AND  spread <= MAX_SPREAD_BPS
+objetivo >= costo_ida_y_vuelta x MIN_EDGE_MULTIPLE     <-- la compuerta de costo
 ```
+
+Esa ultima es la que mas operaciones descarta. Con un costo de vuelta de ~0,92%
+y `MIN_EDGE_MULTIPLE=1.5`, el objetivo tiene que ser de al menos **1,38%**. Si
+el ATR del momento no da para tanto, el bot no entra por convencido que este
+Jev: entrar seria pagarle la comision al exchange con plata tuya.
 
 Esto es deliberado: si manana Jev cambia de version y se vuelve mas optimista, el
 riesgo **no se mueve** salvo que alguien edite esos numeros a mano.
@@ -177,7 +212,7 @@ MODE=live npm run run
 | `npm run flat` | **Cierra la posicion a mercado, ahora** |
 | `npm run backtest -- --days=90` | Backtest con el cerebro heuristico |
 | `npm run backtest -- --days=30 --jev` | Backtest usando Jev (consume credito) |
-| `npm test` | 121 tests |
+| `npm test` | 139 tests |
 | `npx tsx src/cli.ts reset-kill-switch` | Reactiva tras un apagado de emergencia |
 
 Para frenar el bot sin matar el proceso: `ALLOW_ENTRIES=false`. Deja de abrir
@@ -200,6 +235,8 @@ Todas configurables en `.env`, todas deterministicas:
 | `MAX_TRADES_PER_DAY` | 6 | Tope de operaciones diarias |
 | `COOLDOWN_MIN` | 30 min | Espera obligatoria despues de cerrar |
 | `MAX_SPREAD_BPS` | 20 | No opera con el libro demasiado abierto |
+| `MIN_EDGE_MULTIPLE` | 1.5× | El objetivo debe cubrir 1,5 veces el costo de operar |
+| `FEE_RATE` | 0.40% | Arancel taker del tramo base de Kraken |
 
 El tamano de la posicion sale de dividir el riesgo aceptado por la distancia al
 stop. Cuando la volatilidad crece, el stop se aleja y **la posicion entra mas
@@ -216,8 +253,9 @@ chica sola**, sin que nadie toque un parametro.
   momento. Trata sus resultados como el techo optimista, no como lo esperable.
 - **Poné solo lo que puedas perder entero.**
 - **Las comisiones importan mas de lo que parece.** Cada vuelta completa cuesta
-  ~0.52% en fees mas el spread. Un bot que opera mucho pierde por ahi aunque
-  acierte la direccion.
+  **0,80% en comisiones** mas el spread. Un bot que opera mucho pierde por ahi
+  aunque acierte la direccion. Por eso existe la compuerta `cost_edge` y por eso
+  los frenos por defecto son restrictivos.
 - **La clave API no debe tener permiso de retiro.** Nunca.
 - **`data/` y `.env` no van al repositorio.** Ya estan en `.gitignore`.
 
@@ -234,7 +272,9 @@ src/
 │   ├── jev.ts         Las 5 preguntas tipadas y la llamada al modelo
 │   ├── heuristic.ts   Cerebro de reglas: linea de base y backtesting
 │   └── policy.ts      Umbrales: traduce probabilidades en intencion de operar
-├── risk/manager.ts    Stops, frenos, tamano. El modelo no lo puede sobrepasar.
+├── risk/
+│   ├── manager.ts     Stops, frenos, tamano. El modelo no lo puede sobrepasar.
+│   └── costs.ts       Comisiones, punto de equilibrio y rentabilidad esperada
 ├── broker/
 │   ├── paper.ts       Simulador con comisiones y slippage reales
 │   └── kraken.ts      Cliente REST firmado (HMAC-SHA512 + nonce creciente)
@@ -245,7 +285,8 @@ src/
 └── backtest/runner.ts Backtest reusando los mismos modulos que el vivo
 ```
 
-Mas detalle en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Mas detalle en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) y
+[`docs/COSTS.md`](docs/COSTS.md).
 
 ---
 

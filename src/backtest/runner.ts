@@ -9,6 +9,7 @@ import {
   initialLevels,
   updateTrailingStop,
 } from "../risk/manager.js";
+import { assessEdge } from "../risk/costs.js";
 import type { Candle, ExitReason, PairRules, Position, Quote } from "../types.js";
 import { floorTo, pctChange } from "../util/num.js";
 
@@ -153,6 +154,7 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
     }
 
     const state = buildDecisionState({
+      cfg,
       pair: cfg.PAIR,
       intervalMin: cfg.CANDLE_INTERVAL_MIN,
       candles: window,
@@ -171,7 +173,10 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
     });
 
     const verdict = await brain.decide(state);
-    const plan = decidePlan(state, verdict, cfg);
+    const atrNow = last(atr(window, 14));
+    const projected = initialLevels(quote.ask, atrNow, cfg);
+    const edge = assessEdge(quote.ask, projected.targetPrice, quote, cfg);
+    const plan = decidePlan(state, verdict, cfg, position ? undefined : edge);
 
     if (plan.kind === "close" && position) {
       sell(quote, position.quantity, "model_exit", candle.time);
@@ -210,7 +215,7 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
       tradesToday += 1;
       lastTradeTime = candle.time;
 
-      const levels = initialLevels(price, last(atr(window, 14)), cfg);
+      const levels = initialLevels(price, atrNow, cfg);
       position = {
         quantity,
         entryPrice: price,

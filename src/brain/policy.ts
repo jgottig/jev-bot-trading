@@ -1,5 +1,6 @@
 import type { Config } from "../config.js";
 import { clamp } from "../util/num.js";
+import type { EdgeAssessment } from "../risk/costs.js";
 import type { DecisionState } from "./features.js";
 import type { JevVerdict } from "./jev.js";
 
@@ -39,6 +40,12 @@ export function decidePlan(
   state: DecisionState,
   verdict: JevVerdict,
   cfg: Config,
+  /**
+   * Rentabilidad esperada de la operacion frente a su costo. Se calcula fuera
+   * porque necesita el ATR y los niveles de stop y objetivo, que son del
+   * gestor de riesgo. Si no viene, la compuerta de costo no se evalua.
+   */
+  edge?: EdgeAssessment,
 ): Plan {
   const open = state.portfolio.has_open_position;
 
@@ -105,6 +112,22 @@ export function decidePlan(
     ),
   ];
 
+  // La operacion tiene que apuntar a un movimiento que justifique su costo.
+  // Sin esta compuerta el bot opera mucho y le entrega el resultado al exchange:
+  // con el arancel base, una vuelta cuesta ~0.80% y el objetivo tipico de una
+  // vela corta no llega a cubrirlo.
+  if (edge) {
+    gates.push(
+      gate(
+        "cost_edge",
+        edge.sufficient,
+        `objetivo=${edge.targetBps.toFixed(1)}bps vs costo=${edge.costBps.toFixed(1)}bps ` +
+          `(${edge.edgeMultiple.toFixed(2)}x, minimo ${cfg.MIN_EDGE_MULTIPLE}x), ` +
+          `neto=${edge.netBps.toFixed(1)}bps`,
+      ),
+    );
+  }
+
   const failed = gates.filter((g) => !g.passed);
   if (failed.length > 0) {
     return {
@@ -118,7 +141,9 @@ export function decidePlan(
   return {
     kind: "open",
     sizeFraction: sizeFractionFor(verdict, cfg),
-    reason: `Compra habilitada con conviccion ${verdict.conviction.toFixed(2)} en regimen ${verdict.regime}`,
+    reason:
+      `Compra habilitada con conviccion ${verdict.conviction.toFixed(2)} en regimen ${verdict.regime}` +
+      (edge ? `, objetivo cubre ${edge.edgeMultiple.toFixed(2)}x el costo` : ""),
     gates,
   };
 }
