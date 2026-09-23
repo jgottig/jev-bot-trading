@@ -212,7 +212,7 @@ MODE=live npm run run
 | `npm run flat` | **Cierra la posicion a mercado, ahora** |
 | `npm run backtest -- --days=90` | Backtest con el cerebro heuristico |
 | `npm run backtest -- --days=30 --jev` | Backtest usando Jev (consume credito) |
-| `npm test` | 139 tests |
+| `npm test` | 147 tests |
 | `npx tsx src/cli.ts reset-kill-switch` | Reactiva tras un apagado de emergencia |
 
 Para frenar el bot sin matar el proceso: `ALLOW_ENTRIES=false`. Deja de abrir
@@ -244,6 +244,32 @@ chica sola**, sin que nadie toque un parametro.
 
 ---
 
+## ¿Cuánto capital hace falta?
+
+`npm run doctor` lo verifica y te avisa antes de que fondees. Hay dos formas
+distintas de que el capital no alcance:
+
+1. **Mecánica**: la posición queda por debajo del mínimo del exchange y el bot
+   nunca abre una orden. Se ve enseguida.
+2. **Económica**: el bot opera bien, pero la ganancia posible es tan chica en
+   términos absolutos que no cubre el costo de la API que la genera. Esta es
+   peor, porque el bot parece funcionar mientras destruye valor.
+
+| Capital | Posición (25%) | ¿Opera? | Ganancia 15%/año | La API se lleva |
+|---:|---:|:---:|---:|---:|
+| USD 19 | 4,75 | **No** | 2,85 | **170%** |
+| USD 40 | 10,00 | **No** | 6,00 | 81% |
+| USD 100 | 25,00 | Sí | 15,00 | 32% |
+| USD 250 | 62,50 | Sí | 37,50 | 13% |
+| **USD 500** | 125,00 | Sí | 75,00 | **6%** |
+| USD 1.000 | 250,00 | Sí | 150,00 | 3% |
+
+**Mínimo razonable: USD 500.** Por debajo de USD 100 el bot directamente no
+abre operaciones con la configuración por defecto.
+
+El paper trading, en cambio, es gratis e ilimitado: podés simular USD 1.000 sin
+tener USD 1.000.
+
 ## Antes de poner plata, leé esto
 
 - **Esto puede perder dinero.** Es software de trading automatico sobre un activo
@@ -274,7 +300,8 @@ src/
 │   └── policy.ts      Umbrales: traduce probabilidades en intencion de operar
 ├── risk/
 │   ├── manager.ts     Stops, frenos, tamano. El modelo no lo puede sobrepasar.
-│   └── costs.ts       Comisiones, punto de equilibrio y rentabilidad esperada
+│   ├── costs.ts       Comisiones, punto de equilibrio y rentabilidad esperada
+│   └── viability.ts   ¿Alcanza el capital para que esto tenga sentido?
 ├── broker/
 │   ├── paper.ts       Simulador con comisiones y slippage reales
 │   └── kraken.ts      Cliente REST firmado (HMAC-SHA512 + nonce creciente)

@@ -8,6 +8,7 @@ import { loadConfig, type Config } from "./config.js";
 import { TradingEngine } from "./engine.js";
 import { Logger } from "./logger.js";
 import { KrakenPublicClient, fetchHistory } from "./marketdata/kraken-public.js";
+import { assessCapital } from "./risk/viability.js";
 import { StateStore, dailyPnlPct, drawdownPct } from "./state/store.js";
 
 function brainFor(cfg: Config, forceHeuristic = false): Brain {
@@ -133,6 +134,34 @@ async function doctor(cfg: Config, logger: Logger): Promise<number> {
       ok: true,
       detail: "MODE=paper: no se usan credenciales",
     });
+  }
+
+  // Viabilidad del capital: el error mas caro es descubrir despues de fondear
+  // que la cuenta es demasiado chica para que el bot tenga sentido.
+  try {
+    const [quote, rules] = await Promise.all([
+      market.getQuote(cfg.PAIR),
+      market.getPairRules(cfg.PAIR),
+    ]);
+    const equity =
+      cfg.MODE === "paper"
+        ? cfg.PAPER_STARTING_CASH
+        : await (async () => {
+            const b = await new KrakenBroker({
+              apiKey: cfg.KRAKEN_API_KEY!,
+              apiSecret: cfg.KRAKEN_API_SECRET!,
+              pair: cfg.PAIR,
+            }).getBalance();
+            return b.cash + b.base * quote.last;
+          })();
+    const v = assessCapital(equity, rules, cfg, quote.last);
+    checks.push({
+      name: `Capital suficiente (USD ${equity.toFixed(2)})`,
+      ok: v.level !== "blocked",
+      detail: v.messages.join("\n          "),
+    });
+  } catch {
+    // Sin datos de mercado no se puede evaluar; los chequeos de arriba ya lo reportan.
   }
 
   console.log(`\n  Modo: ${cfg.MODE}   Par: ${cfg.PAIR}   Velas: ${cfg.CANDLE_INTERVAL_MIN}m\n`);
