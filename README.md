@@ -172,7 +172,16 @@ npm run backtest -- --days=90
 Descarga 90 dias de velas reales de Kraken y corre la estrategia completa contra
 ese historico. Compara el resultado con comprar y sostener.
 
-### 2. Paper trading — precios reales, plata ficticia
+### 2. Demo de un día — precios reales, plata ficticia
+
+```bash
+npm run demo
+```
+
+Perfil listo para dejarlo corriendo todo el día sin cuentas de exchange.
+Guía completa en [`docs/DEMO.md`](docs/DEMO.md).
+
+### 3. Paper trading con el perfil real — precios reales, plata ficticia
 
 Ponés tu clave de Jev en `.env` (`TYPESAFE_API_KEY=...`) y:
 
@@ -186,7 +195,7 @@ npm run status   # posicion, resultados, estado del corta-corriente
 Sin `TYPESAFE_API_KEY` el bot igual funciona: usa un cerebro heuristico de
 reserva, que ademas sirve como linea de base para medir si Jev aporta algo.
 
-### 3. Real — recien despues de mirar los numeros
+### 4. Real — recien despues de mirar los numeros
 
 Ver [`docs/SETUP-KRAKEN.md`](docs/SETUP-KRAKEN.md) para crear la cuenta y la
 clave API con los permisos correctos. Despues:
@@ -205,6 +214,8 @@ MODE=live npm run run
 
 | Comando | Que hace |
 |---|---|
+| `npm run demo` | **Demo de un dia**: paper trading, sin cuentas de exchange |
+| `npm run demo:status` | Estado de la demo, sin pisar el perfil real |
 | `npm run doctor` | Verifica configuracion, conexion a Kraken y a Jev |
 | `npm run once` | Un solo ciclo de decision |
 | `npm run run` | Bucle continuo |

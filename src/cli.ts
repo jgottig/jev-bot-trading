@@ -319,8 +319,36 @@ async function backtest(cfg: Config, args: string[]): Promise<void> {
   );
 }
 
+/**
+ * Construye el motor reintentando si el exchange no responde al arrancar.
+ *
+ * El arranque lee las reglas del par, asi que un corte de red justo en ese
+ * momento mataria el proceso antes de entrar al bucle. En una corrida larga eso
+ * es inaceptable: el bot tiene que aguantar que Kraken se caiga un rato.
+ */
+async function buildEngineWithRetry(
+  cfg: Config,
+  logger: Logger,
+  isStopping: () => boolean,
+): Promise<TradingEngine | null> {
+  const delays = [5, 15, 30, 60, 120];
+  for (let attempt = 0; !isStopping(); attempt++) {
+    try {
+      return await buildEngine(cfg, logger);
+    } catch (err) {
+      const wait = delays[Math.min(attempt, delays.length - 1)]!;
+      logger.error("no se pudo iniciar, reintentando", {
+        intento: attempt + 1,
+        esperaSegundos: wait,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await new Promise((r) => setTimeout(r, wait * 1000));
+    }
+  }
+  return null;
+}
+
 async function loop(cfg: Config, logger: Logger): Promise<void> {
-  const engine = await buildEngine(cfg, logger);
   let stopping = false;
 
   const shutdown = (signal: string) => {
@@ -334,6 +362,12 @@ async function loop(cfg: Config, logger: Logger): Promise<void> {
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
+  const engine = await buildEngineWithRetry(cfg, logger, () => stopping);
+  if (!engine) {
+    logger.info("bot detenido antes de iniciar");
+    return;
+  }
+
   logger.info("bot iniciado", {
     mode: cfg.MODE,
     pair: cfg.PAIR,
@@ -342,10 +376,16 @@ async function loop(cfg: Config, logger: Logger): Promise<void> {
     broker: engine.currentState.killSwitch.active ? "CORTA-CORRIENTE ACTIVO" : "ok",
   });
 
+  let cycles = 0;
+  let consecutiveFailures = 0;
+
   while (!stopping) {
     try {
       const result = await engine.runOnce();
+      cycles += 1;
+      consecutiveFailures = 0;
       logger.info("ciclo", {
+        n: cycles,
         action: result.action,
         detail: result.detail,
         equity: Number(result.equity.toFixed(2)),
@@ -354,9 +394,18 @@ async function loop(cfg: Config, logger: Logger): Promise<void> {
     } catch (err) {
       // Un ciclo que falla no puede tumbar el bot: el mercado sigue y la posicion
       // abierta necesita que el proximo ciclo llegue para vigilar su stop.
+      consecutiveFailures += 1;
       logger.error("ciclo fallido", {
+        consecutivos: consecutiveFailures,
         error: err instanceof Error ? err.message : String(err),
       });
+      // Con una posicion abierta, una racha de fallos significa que su stop lleva
+      // rato sin vigilarse. Hay que gritarlo, no dejarlo pasar entre los logs.
+      if (consecutiveFailures === 5 && engine.currentState.position) {
+        logger.error("ATENCION: hay una posicion abierta y el bot lleva 5 ciclos sin poder consultar el mercado", {
+          minutosSinVigilar: (consecutiveFailures * cfg.LOOP_INTERVAL_SEC) / 60,
+        });
+      }
     }
     if (stopping) break;
     await new Promise((r) => setTimeout(r, cfg.LOOP_INTERVAL_SEC * 1000));

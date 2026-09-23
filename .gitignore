@@ -7,3 +7,7 @@ dist/
 # Estado del bot: posiciones, ordenes, curva de equity. Nunca al repo.
 # El directorio lo crea StateStore al guardar por primera vez.
 data/
+
+# Log de corridas de la demo
+demo*.log
+nohup.out

@@ -4,7 +4,9 @@
   "private": true,
   "description": "Bot de trading de cripto: decisiones tipadas con Jev (TypeSafe AI), ejecucion en Kraken, con paper trading y backtesting.",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -15,7 +17,11 @@
     "run": "tsx src/cli.ts run",
     "status": "tsx src/cli.ts status",
     "backtest": "tsx src/cli.ts backtest",
-    "flat": "tsx src/cli.ts flat"
+    "flat": "tsx src/cli.ts flat",
+    "demo": "tsx --env-file=.env.demo src/cli.ts run",
+    "demo:doctor": "tsx --env-file=.env.demo src/cli.ts doctor",
+    "demo:status": "tsx --env-file=.env.demo src/cli.ts status",
+    "demo:once": "tsx --env-file=.env.demo src/cli.ts once"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",
